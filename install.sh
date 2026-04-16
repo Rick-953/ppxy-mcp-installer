@@ -60,7 +60,7 @@ prompt_choice() {
         return 0
         ;;
       *)
-        yellow "Please enter one of: domain, ip, none, y, n"
+        yellow "Please enter one of: domain, ip, none"
         ;;
     esac
   done
