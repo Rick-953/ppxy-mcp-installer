@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SERVICE_NAME="${SERVICE_NAME:-ai-host-bridge}"
+ENV_FILE="${ENV_FILE:-/etc/ai-host-bridge.env}"
+APP_DIR="${APP_DIR:-/opt/ai-host-bridge}"
+LOG_DIR="${LOG_DIR:-/var/log/ai-host-bridge}"
+
+load_env() {
+  if [[ -f "$ENV_FILE" ]]; then
+    # shellcheck disable=SC1090
+    set -a && source "$ENV_FILE" && set +a
+  fi
+}
+
+require_root() {
+  if [[ "${EUID}" -ne 0 ]]; then
+    echo "This command must run as root." >&2
+    exit 1
+  fi
+}
+
+set_env_value() {
+  local key="$1"
+  local value="$2"
+  require_root
+  touch "$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+  if grep -q "^${key}=" "$ENV_FILE"; then
+    sed -i "s#^${key}=.*#${key}=${value}#" "$ENV_FILE"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+  fi
+}
+
+random_code() {
+  node -e "console.log('gpt_' + require('crypto').randomBytes(12).toString('base64url'))"
+}
+
+usage() {
+  cat <<'USAGE'
+AI Host Bridge control utility
+
+Usage:
+  ai-host-bridgectl status
+  ai-host-bridgectl endpoints
+  ai-host-bridgectl show-code
+  ai-host-bridgectl set-code <new-code>
+  ai-host-bridgectl rotate-code
+  ai-host-bridgectl logs [audit|ai|errors|journal]
+  ai-host-bridgectl restart
+USAGE
+}
+
+cmd="${1:-help}"
+case "$cmd" in
+  status)
+    load_env
+    systemctl --no-pager --full status "$SERVICE_NAME" || true
+    echo
+    curl -ksS "${PUBLIC_BASE_URL:-https://000339.xyz}/mcp-health" || true
+    echo
+    ;;
+  endpoints)
+    load_env
+    base="${PUBLIC_BASE_URL:-https://000339.xyz}"
+    printf 'MCP URL: %s/mcp\n' "$base"
+    printf 'SSE URL: %s/sse\n' "$base"
+    printf 'Messages URL: %s/messages\n' "$base"
+    printf 'OAuth authorize: %s/oauth/authorize\n' "$base"
+    printf 'Admin: %s/admin\n' "$base"
+    ;;
+  show-code)
+    load_env
+    printf '%s\n' "${OAUTH_LOGIN_CODE:-}"
+    ;;
+  set-code)
+    [[ $# -eq 2 ]] || { usage; exit 2; }
+    set_env_value OAUTH_LOGIN_CODE "$2"
+    systemctl restart "$SERVICE_NAME"
+    echo "Access code updated and service restarted."
+    ;;
+  rotate-code)
+    new_code="$(random_code)"
+    set_env_value OAUTH_LOGIN_CODE "$new_code"
+    systemctl restart "$SERVICE_NAME"
+    echo "$new_code"
+    ;;
+  logs)
+    kind="${2:-audit}"
+    case "$kind" in
+      audit) tail -n 120 -f "$LOG_DIR/audit.jsonl" ;;
+      ai) tail -n 120 -f "$LOG_DIR/ai-requests.jsonl" ;;
+      errors) tail -n 120 -f "$LOG_DIR/errors.jsonl" ;;
+      journal) journalctl -u "$SERVICE_NAME" -n 120 -f ;;
+      *) usage; exit 2 ;;
+    esac
+    ;;
+  restart)
+    require_root
+    systemctl restart "$SERVICE_NAME"
+    systemctl --no-pager --full status "$SERVICE_NAME"
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac

@@ -1,0 +1,20 @@
+[Unit]
+Description=AI Host Bridge MCP Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/ai-host-bridge
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/ai-host-bridge.env
+ExecStartPre=/usr/bin/install -d -m 0700 -o root -g root /var/log/ai-host-bridge
+ExecStart=/usr/bin/node /opt/ai-host-bridge/server.js
+Restart=always
+RestartSec=3
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

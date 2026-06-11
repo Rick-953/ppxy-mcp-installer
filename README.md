@@ -1,101 +1,57 @@
-# PPXY MCP Installer
+# AI Host Bridge
 
-One-command Debian installer for a remote MCP server that can be added to Perplexity as a custom connector.
+AI Host Bridge is a remote MCP server for connecting web AI clients to a server or PC.
 
-It installs:
+## Runtime URLs
 
-- MCP Streamable HTTP endpoint at `/mcp`
-- SSE fallback endpoint at `/sse`
-- API key authentication
-- A sandboxed workspace under `/opt/ppxy-mcp/workspace`
-- A `ppxy-mcp` systemd service running as an unprivileged user
-- Optional Nginx HTTPS reverse proxy
+- MCP: `https://000339.xyz/mcp`
+- SSE: `https://000339.xyz/sse`
+- Messages: `https://000339.xyz/messages`
+- Admin UI: `https://000339.xyz/admin`
+- Health: `https://000339.xyz/mcp-health`
 
-## Quick Start
-
-Run this on a fresh Debian server:
+## Quick Install
 
 ```bash
-tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/Rick-953/ppxy-mcp-installer/main/install.sh -o "$tmp" && sudo bash "$tmp"
+tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/Rick-953/ai-host-bridge/main/install.sh -o "$tmp" && sudo bash "$tmp"
 ```
 
-The installer will ask:
+The installer asks for the public base URL, local port, MCP API key, and OAuth access code.
 
-- whether to use a domain, an IP address, or direct HTTP mode
-- the domain or public IP
-- the local MCP port
-- the sandbox workspace path
-- the API key, or it can generate one
-- the email address for Let's Encrypt notices
+## Human Operations
 
-## Perplexity Settings
-
-Use the values printed at the end of the installer:
-
-- MCP Server URL: `https://your-domain/mcp`
-- Authentication: `API Key`
-- API Key: the key printed by the installer
-- Transport: `Streamable HTTP`
-
-If Streamable HTTP does not work in your client, use the SSE fallback URL:
-
-- MCP Server URL: `https://your-domain/sse`
-- Authentication: `API Key`
-- Transport: `SSE`
-
-## Can I Use Only an IP?
-
-Yes, but it still needs HTTPS for Perplexity remote MCP.
-
-The installer supports IP mode by requesting a short-lived Let's Encrypt IP address certificate. Requirements:
-
-- the IP is public
-- ports 80 and 443 are reachable from the internet
-- no other service blocks Nginx from serving the ACME challenge
-- certificate renewal timer remains enabled
-
-IP certificates are short-lived, so the installer creates a systemd timer:
+Install the CLI on the host as `/usr/local/bin/ai-host-bridgectl`.
 
 ```bash
-systemctl status ppxy-mcp-certbot-renew.timer
+ai-host-bridgectl status
+ai-host-bridgectl endpoints
+ai-host-bridgectl show-code
+ai-host-bridgectl rotate-code
+ai-host-bridgectl logs ai
 ```
 
-Direct HTTP mode is available for testing or for servers behind another HTTPS proxy, but Perplexity usually rejects plain HTTP remote MCP URLs.
+The Admin UI uses the current OAuth access code and shows connector URLs, logging status, and common CLI commands.
 
-## Manage The Service
+## Logs
+
+Logs are JSONL files under `/var/log/ai-host-bridge`.
+
+- `audit.jsonl`: HTTP, auth, session, and tool-call audit events.
+- `ai-requests.jsonl`: full MCP JSON-RPC request bodies sent by the AI client, with obvious secret fields redacted.
+- `errors.jsonl`: service and tool errors.
+
+Set `LOG_RAW_AI_REQUESTS=0` to stop recording full AI request bodies. Set `LOG_MAX_BODY_BYTES` to control body truncation.
+
+## Deployment Notes
+
+The production systemd unit is `ai-host-bridge.service`.
 
 ```bash
-systemctl status ppxy-mcp
-journalctl -u ppxy-mcp -f
+install -d -m 0755 /opt/ai-host-bridge
+cp -a server.js package.json package-lock.json bin systemd deploy /opt/ai-host-bridge/
+cp systemd/ai-host-bridge.service /etc/systemd/system/ai-host-bridge.service
+cp deploy/ai-host-bridge.logrotate /etc/logrotate.d/ai-host-bridge
+cp deploy/ai-host-bridge.env.example /etc/ai-host-bridge.env
+systemctl daemon-reload
+systemctl enable --now ai-host-bridge
 ```
-
-The environment file is:
-
-```bash
-/etc/ppxy-mcp/ppxy-mcp.env
-```
-
-After changing the API key, port, or workspace:
-
-```bash
-sudo systemctl restart ppxy-mcp
-```
-
-## Uninstall
-
-```bash
-tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/Rick-953/ppxy-mcp-installer/main/install.sh -o "$tmp" && sudo bash "$tmp" --uninstall
-```
-
-The uninstall command removes the systemd units and Nginx site link. It leaves `/opt/ppxy-mcp`, `/etc/ppxy-mcp`, `/var/www/ppxy-mcp`, and existing Let's Encrypt certificates in place so data and keys are not destroyed accidentally.
-
-## Security Notes
-
-This MCP server exposes file and shell tools to the AI client. It is intentionally restricted:
-
-- file access is limited to the workspace
-- commands run as the `ppxy-mcp` system user
-- system administration commands such as `systemctl`, `docker`, `iptables`, and `sudo` are blocked by the tool layer
-- the service uses systemd hardening options
-
-Use a strong API key and only add the connector in clients you trust.

@@ -1,0 +1,9 @@
+/var/log/ai-host-bridge/*.jsonl {
+  daily
+  rotate 14
+  compress
+  missingok
+  notifempty
+  copytruncate
+  create 0600 root root
+}

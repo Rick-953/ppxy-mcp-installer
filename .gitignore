@@ -1,0 +1,9 @@
+node_modules/
+oauth-store.json
+*.log
+*.jsonl
+.env
+.env.*
+workspace/
+server.js.bak.*
+.DS_Store
